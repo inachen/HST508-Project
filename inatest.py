@@ -1,6 +1,6 @@
 # inatest.py
 # -------------------------------------------
-# testing random stuff
+# testing random stuff for TADs
 
 import sys
 import random

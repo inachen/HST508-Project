@@ -1,0 +1,13 @@
+TADs
+- process matrix to give parameters (L, R, L+R, etc) for each bin
+    - find a good cut off for poor-read columns
+    - find a good window (50bp on either side)
+    - other parameters (L, R, L+R, switch, |L-R|)
+    - graph
+- good algorithm to organize bins into x number of groups
+    - 
+
+
+Compartments
+- 1MB scale
+- cleaning data
