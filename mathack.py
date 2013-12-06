@@ -66,6 +66,8 @@ def directionality(A, goodrows=None, window=50):
 			continue
 		A[i][(i-window):(i+window)].sum()
 
+def remove_dist_effect(A):
+
 #how does contact frequency scale with distance?
 def distance_scaling(A,goodrows):
 	n = A.shape[0]	
@@ -95,12 +97,35 @@ def smooth_array(a,half_window):
 	w = half_window
 	for i in range(n):
 		smootha[i] = np.average(a[max(i-w,0):min(i+w+1,n)])
-
 	return smootha
 
+
 def finding_distance_function():
-	log_probs = sio.loadmat("dist_dependence.mat")
+	#something funky happened with storage
+	qp = sio.loadmat("dist_dependence.mat")["log_probs"][0]
+	lp = []
+	m = len(qp)
+	for i in range(m):
+		lp.append(qp[i][0])
+	ns = []
+	for i in range(m):
+		ns.append(len(lp[i]))
+
 	
+	#for global average, just count the first 2/3 of chromosome length
+	n_max = max(ns)
+	n_max = n_max*2/3
+	avg_lp = np.zeros(n_max)
+	for i in range(n_max):
+		k = 0
+		s = 0.0
+		for j in range(m):
+			if i <= ns[m]*2/3:
+				k += 1
+				s += lp[j][i]
+			avg_lp = s/float(k)
+
+	plt.plot(np.arange(avg_))
 
 def distance_effects():
 	print "loading chromosomes..."
@@ -116,7 +141,12 @@ def distance_effects():
 		ns.append(A.shape[0])
 		log_probs.append(distance_scaling(Alist[i],whatisbad(Alist[i])))
 
-	sio.savemat("dist_dependence.mat",{"log_probs": log_probs})
+	lp_dict = {}
+	for i in range(to_try):
+		lp_dict["dist_dep_chr" + str(i+1)] = log_probs[i]
+	sio.savemat("dist_deps.mat",lp_dict)
+
+	#sio.savemat("dist_dependence.mat",{"log_probs": log_probs})
 	if 0:
 		plt.figure(1)
 		for i in range(to_try):
@@ -150,9 +180,10 @@ def distance_effects():
 	#things get noisy towards the end. what if only 2/3 of the chromosome contributed?
 
 def main():
-	#distance_effects()
-	finding_distance_function()
-main()
+	distance_effects()
+	#finding_distance_function()
+
+#main()
 
 
 
