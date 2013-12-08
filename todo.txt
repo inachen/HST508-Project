@@ -6,8 +6,14 @@ TADs
     - graph
 - good algorithm to organize bins into x number of groups
     - 
-
+- spectral clustering
+- tads are different in A and B compartments
+    - how do we do this?
+- Mark Newman
 
 Compartments
 - 1MB scale
 - cleaning data
+
+Markers
+7-mers or k-mers
