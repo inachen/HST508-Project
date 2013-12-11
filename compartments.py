@@ -15,7 +15,7 @@ import csv
 DATAPATH = "/Users/josh/Dropbox/binned_heatmaps/"
 
 # folder to write output
-OUTPATH = "output/"
+OUTPATH = "/Users/josh/Dropbox/HST508/tracks/"
 
 # number of chromosomes in human cells
 NUM_CHRMS = 23
@@ -91,12 +91,8 @@ def smooth_distance_scaling(A, goodrows):
 	return counts
 
 #normalizes entries so each distance d = |i-j| has the same average number of counts
-def distance_normalize(A):
-	n = A.shape[0]
-	counts = np.zeros(A.shape[0])
-	for i in range(A.shape[0]):
-		counts[i] = np.average(np.diag(A,k=i))
-
+def distance_normalize(A_in, stash=False, stashspot='nowhere'):
+	A = copy.copy(A_in)
 	n = A.shape[0]
 	goodrows = good_rows(A)
 	#rescale
@@ -106,13 +102,26 @@ def distance_normalize(A):
 		for j in range(n):
 			if A[i][j] > 0 and dist_scale[abs(i-j)] > 0:
 				A[i][j] = A[i][j]/dist_scale[abs(i-j)]	
-	
+
+	return (A, dist_scale)
+
+def distance_de_normalize(A, dist_scale):
+
 	n = A.shape[0]
-	counts = np.zeros(A.shape[0])
-	for i in range(A.shape[0]):
-		counts[i] = np.average(np.diag(A,k=i))
+
+	for i in range(n):
+		for j in range(n):
+			if A[i][j] > 0 and dist_scale[abs(i-j)] > 0:
+				A[i][j] = A[i][j]*dist_scale[abs(i-j)]	
 
 	return A
+
+
+def test_ddn():
+	A = load_chr(chr=17)
+	#A = np.random.random((10,10))
+	B, dist_scale = distance_normalize(A)
+	print abs(A - distance_de_normalize(B,dist_scale)).max()
 
 #truncates the top few hits
 def trunc(A, high=0.0005):
@@ -141,6 +150,48 @@ def test_log_for_show():
 	print np.log(A)
 	print log_for_show(A)
 
+def eigen_signal(A):
+	#truncate, normalize, truncate
+	n = A.shape[0]
+	A = trunc(A)
+	A, d_scale = distance_normalize(A)
+	A = trunc(A)
+	#strip zero rows
+	B, cols_kept = clean_mat(copy.copy(A))
+	#normalize to zero mean
+	m = B.shape[0]
+	mu = B.mean()
+	B = B - np.ones(m)*mu
+
+	#smooth out the matrix by averaging locally
+	C = smooth_array(B,2)
+
+	#eigenvector decomposition
+	(V, W) = np.linalg.eig(C)
+	eig_vecs = W[:,:3]
+	eig_vals = V[:3]
+	
+	#restore missing rows
+	full_eig_vecs = np.zeros((n,3))
+	full_eig_vecs[np.ix_(cols_kept,range(3))] = eig_vecs
+	
+	return eig_vals, full_eig_vecs
+
+def test_eigen_signal():
+	eig_vals, eig_vecs = eigen_signal(load_chr(chr=17))
+	
+	x_vals = np.arange(eig_vecs.shape[0])
+	plt.plot(x_vals, eig_vecs[:,0], x_vals, eig_vecs[:,1], x_vals, eig_vecs[:,2])
+	plt.show()
+	
+def export_eigen_signals():
+	for i in range(NUM_CHRMS):
+		export_dict = {}
+		eig_vals, eig_vecs = eigen_signal(load_chr(chr=i+1))
+		export_dict["evecs"] = eig_vecs
+		export_dict["evals"] = eig_vals	
+		sio.savemat(OUTPATH + "compartment_eigs_chr" + str(i+1) + ".mat", export_dict)
+
 def eigen_compartments(A):
 	plt.subplot(2,2,1)
 	plt.imshow(log_for_show(A))
@@ -150,18 +201,21 @@ def eigen_compartments(A):
 	plt.subplot(2,2,2)
 	plt.imshow(log_for_show(A))
 	
-	A = distance_normalize(A)
-	A = trunc(A)
+	raw_A = A
+	
+	A, d_scale = distance_normalize(A)
+	A = trunc(copy.copy(A))
 	
 	plt.subplot(2,2,3)
 	plt.imshow(log_for_show(A))
 	
 	#strip zero rows
-	(B, cols_kept) = clean_mat(A)
+	B, cols_kept = clean_mat(copy.copy(A))
 	m = B.shape[0]
 
 	#normalize to zero mean
-	B = B - np.ones(m)*B.mean()
+	mu = B.mean()
+	B = B - np.ones(m)*mu
 	plt.subplot(2,2,4)
 	plt.imshow(B)
 	plt.show()
@@ -169,121 +223,87 @@ def eigen_compartments(A):
 	#eigenvector decomposition
 	#jesus it wants to do all of them. i guess i should just dump the matrix into matlab at that point.
 
-	#before doing eigenvectors/values, should we do an average?
-	
+	#smooth out the matrix by averaging locally
+	C = smooth_array(B,2)
+	m = C.shape[0]
 
 	print "about to do linear algebra"
-	(V, W) = np.linalg.eig(B)
-	eig_vec = W[np.argmax(V)]
+	(V, W) = np.linalg.eig(C)
+	eig_vec = W[:,np.argmax(V)]
 	eig_val = V[np.argmax(V)]
 	
-	eig_val_mat = np.matrix([eig_val])
-	eig_vec_mat = eig_val*eig_val_mat.T*eig_val_mat
+	top_3_mat = np.zeros((m,m))
+	for i in range(3):
+		eig_vec_mat = np.matrix([W[:,i]])
+		top_3_mat += V[i]*eig_vec_mat.T*eig_vec_mat
+	
+	
+	plt.subplot(2,2,1)
+	plt.imshow(B)
 	plt.subplot(2,2,2)
-	plt.imshow(eig_vec_mat)
+	plt.imshow(B-top_3_mat)
+	
+	#first restore mean
+	top_3_mat += np.ones(m)*mu
+	#restore missing columns
+	T3 = np.zeros((raw_A.shape[0],raw_A.shape[0]))
+	T3[np.ix_(cols_kept,cols_kept)] = top_3_mat
+	A_eig_and_dist = distance_de_normalize(T3, d_scale)
+	
+	plt.subplot(2,2,3)
+	plt.imshow(log_for_show(raw_A))	
+	plt.subplot(2,2,4)
+	plt.imshow(log_for_show(abs(raw_A - A_eig_and_dist)))
+	
 	plt.show()
+	#eig_vec_mat = np.matrix([eig_vec])
+	#eig_vec_mat = eig_val*eig_vec_mat.T*eig_vec_mat
+	#plt.subplot(1,1,1)
+	#plt.imshow(eig_vec_mat)
+	#plt.show()
 	plt.subplot(1,1,1)
 	plt.plot(np.arange(m),eig_vec)
 	plt.show()
 	import pdb; pdb.set_trace()
+
+def test_smooth_array():
+	a = np.arange(25).reshape((5,5))
+	print a
+	print smooth_array(a,1)
 	
-	
-
-
-
 def smooth_array(a,half_window):
-	n = len(a)
-	smootha = np.zeros(n)
 	w = half_window
-	for i in range(n):
-		smootha[i] = np.average(a[max(i-w,0):min(i+w+1,n)])
+	if len(a.shape) == 1:
+		print "hullo"
+		n = len(a)
+		smootha = np.zeros(n)
+		for i in range(n):
+			smootha[i] = np.average(a[max(i-w,0):min(i+w+1,n)])
+
+	#use displacement, and fix the corners	
+	if len(a.shape) == 2:
+		n = a.shape[0]
+		smootha = np.zeros((n + 2*w, n + 2*w))
+		for i in range(2*w+1):
+			for j in range(2*w+1):
+				smootha += np.pad(a, ((i,2*w-i),(j,2*w-j)),mode='edge')
+		smootha = smootha[w:n+w,w:n+w]
+		smootha = smootha / float(4*w*w + 4*w + 1)
+		
+		'''smootha = copy.copy(a)[2*w:,2*w:]
+		for i in range(2*w):
+			smootha += a[i:-2*w+i,i:-2*w+i]
+		smootha = smootha / float(2*w+1)
+		'''
 	return smootha
-
-def finding_distance_function():
-	#something funky happened with storage
-	qp = sio.loadmat("dist_dependence.mat")["log_probs"][0]
-	lp = []
-	m = len(qp)
-	for i in range(m):
-		lp.append(qp[i][0])
-	ns = []
-	for i in range(m):
-		ns.append(len(lp[i]))
-
-	#for global average, just count the first 2/3 of chromosome length
-	n_max = max(ns)
-	n_max = n_max*2/3
-	avg_lp = np.zeros(n_max)
-	for i in range(n_max):
-		k = 0
-		s = 0.0
-		for j in range(m):
-			if i <= ns[m]*2/3:
-				k += 1
-				s += lp[j][i]
-			avg_lp = s/float(k)
-
-	plt.plot(np.arange(avg_))
-
-
-#compute diagonal sum
-
-def distance_effects():
-	print "loading chromosomes..."
-	Alist = []
-	to_try = 23
-	ns = []
-	log_probs = []
-	
-	for i in range(to_try):
-		print "on chromosome " + str(i+1)
-		A = chrmat(chro=(i+1))
-		Alist.append(A)
-		ns.append(A.shape[0])
-		log_probs.append(distance_scaling(Alist[i],whatisbad(Alist[i])))
-
-	lp_dict = {}
-	for i in range(to_try):
-		lp_dict["dist_dep_chr" + str(i+1)] = log_probs[i]
-	sio.savemat("dist_deps.mat",lp_dict)
-
-	#sio.savemat("dist_dependence.mat",{"log_probs": log_probs})
-	if 0:
-		plt.figure(1)
-		for i in range(to_try):
-			plt.subplot(5,5,i)
-			x = np.arange(ns[i])
-			y = log_probs[i]
-			plt.plot(x,y)
-			plt.title("Scaling with distance")
-			plt.xlabel("distance")
-			plt.ylabel("log average contacts")
-			plt.title("Chromosome " + str(i+1))
-		plt.show()
-		plt.savefig('foo.png')
-		plt.close()
-	
-	#display all on same graph
-	n = max(ns)
-	plt.figure(2)
-	y = np.zeros((n,to_try))
-	for i in range(to_try):
-		for j in range(ns[i]):
-			y[j][i] = log_probs[i][j]
-	plt.plot(np.arange(n), y)
-	plt.title("Scaling with distance")
-	plt.xlabel("distance")
-	plt.ylabel("log average contacts")
-	plt.title("Chromosomes all")	
-	plt.savefig('all.png',bbox_inches='tight')
-	plt.show()
-
-	#things get noisy towards the end. what if only 2/3 of the chromosome contributed?
 
 def main():
 	#test_trunc()
 	#test_log_for_show()
 	eigen_compartments(load_chr(chr=17))
+	#export_eigen_signals()
+	#test_ddn()
+	#test_smooth_array()
 	#distance_effects()
 	#finding_distance_function()
 
