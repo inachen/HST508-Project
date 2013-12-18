@@ -26,3 +26,11 @@ DEL_MIN = 1000
 # minimum distance between the min and the max
 MIN_DIST = 50
 
+# default threshold for boundary LdR shift 
+LDR_THRESH = 1
+
+# threshold for interiors
+INT_MIN = 0.9
+INT_MAX = 1.1
+
+

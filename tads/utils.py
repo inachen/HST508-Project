@@ -15,7 +15,7 @@ from constants import *
 
 
 # loads data for a chromosome 
-def load_chr(cell='HIMR',chr=1,corrected=True):
+def load_chr(cell='HES',chr=1,corrected=True):
 
     # file path
     chr_path = DATAPATH + cell + "-all_res40000/" + "chr" + str(chr) + "_chr" + str(chr)

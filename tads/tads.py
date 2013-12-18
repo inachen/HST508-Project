@@ -110,8 +110,10 @@ def calc_RmL(L, R):
 
 # calculate LdR
 def calc_LdR(L, R):
-
-    return (L/R)
+    if R == 0:
+        return 0
+    else:
+        return (L/R)
 
 # histogram of read quality for all chromosomes
 def plot_all_qual():
@@ -170,7 +172,10 @@ def calc_metrics(chr_num):
         LdR_lst[i] = calc_LdR(L, R)
         qLdR_lst[i] = calc_LdR(qL, qR)
 
-    return (L_lst, R_lst, hL_lst, hR_lst, qL_lst, qR_lst, LmR_lst, LdR_lst, qLdR_lst)
+    metrics = {'L': L_lst, 'R': R_lst, 'hL': hL_lst, 'hR': hR_lst, 'qL': qL_lst, 
+        'qR': qR_lst, 'LmR': LmR_lst, 'LdR': LdR_lst, 'qLdR': qLdR_lst}
+
+    return metrics
 
 # finds shifts using LmR
 def find_shifts(lst, delta=SHIFT_THRESH):
@@ -254,6 +259,82 @@ def find_shifts(lst, delta=SHIFT_THRESH):
 
     return np.array(shift_pts), bounds
 
+# find shifts using LdR
+def find_shifts_LdR(lst, delta=LDR_THRESH):
+    data = np.array(lst)
+
+    # get relative min and max
+    min_lst = sig.argrelmin(data)[0]
+    max_lst = sig.argrelmax(data)[0]
+
+    # store shift (aka boundary) locations
+    shift_pts = []
+    bound_lst = np.zeros(len(lst))
+
+    # pointer for max_lst
+    i = 0
+
+    # keep track of confirmed prev min and max
+    pmin = min_lst[0]
+    pmax = max_lst[0]
+
+    while i < len(max_lst) and min_lst != []:
+        xmax = max_lst[i]
+
+        # find first rel min after current rel max
+        index_min = np.argmax(min_lst > xmax)
+        xmin = min_lst[index_min]
+
+        dmin = lst[xmin]
+        dmax = lst[xmax]
+
+        # print 'xmax: ', xmax
+        # print 'xmin: ', xmin
+        # print 'dmax: ', dmax
+        # print 'dmin: ', dmin
+        # print 'dff: ', dmax - dmin
+        # print 'pmin: ', pmin
+
+        # check if prev shift had the same min
+        if pmin == dmin:
+            i += 1
+            continue
+
+        elif (dmax - dmin) > delta:
+
+            # mark the boundaries
+            for x in range(xmax, xmin):
+                bound_lst[x] = 1
+
+            i += 1
+            pmin = dmin
+            pmax = dmax
+            # print 'yes'
+        elif len(min_lst) <= index_min:
+            next_min = min_lst[index_min + 1]
+
+            # check max's in between
+
+            if (next_min - xmax) > MIN_DIST:
+                i += 1
+                continue
+
+            next_max_lst = list(enumerate(max_lst))
+
+            for j, m in next_max_lst[i:]:
+                if m < next_min:
+                    if (lst[m] - lst[next_min]) > (lst[xmax] - lst[next_min]):
+                        i = j
+                        continue
+
+            # discards first part of lst
+            min_lst = min_lst[index_min + 1:]
+
+        else:
+            i += 1
+
+    return np.array(shift_pts), bound_lst
+
 # finds shifts using RmL
 def find_shifts_RmL(lst, delta=SHIFT_THRESH):
     data = np.array(lst)
@@ -336,6 +417,15 @@ def find_shifts_RmL(lst, delta=SHIFT_THRESH):
 
     return np.array(shift_pts), bounds
 
+# find interiors using LdR
+def find_interiors_LdR(lst, min=INT_MIN, max=INT_MAX):
+    interior_lst = np.zeros(len(lst))
+    for i, LdR in enumerate(lst):
+        if (LdR > INT_MIN) and (LdR < INT_MAX):
+            interior_lst[i] = 1
+
+    return interior_lst
+
 # saves and plots metrics
 def process_metrics():
 
@@ -356,27 +446,28 @@ def process_metrics():
 def process_shifts():
     writer = csv.writer(open(OUTPATH + 'LRbounds-output.csv', 'wb'))
 
-    for chr_num in range(1, NUM_CHRMS+1):
+    for chr_num in range(2, NUM_CHRMS+1):
 
         chrm = 'chr' + str(chr_num)
 
-        L_lst, R_lst, LpR_lst, LmR_lst, RmL_lst = calc_metrics(chr_num)
+        metrics = calc_metrics(chr_num)
 
-        lst = RmL_lst
-        shift_lst, bound_lst = find_shifts(lst)
+        lst = metrics['qLdR']
+        shift_lst, bound_lst = find_shifts_LdR(lst)
+        # interior_lst = find_shifts_LdR(lst)
 
         writer.writerow([chrm])
-        writer.writerow(['shifts'])
-        writer.writerow(shift_lst)
+        # writer.writerow(['shifts'])
+        # writer.writerow(shift_lst)
         writer.writerow(['bounds'])
         writer.writerow(bound_lst)
 
-        f, axarr = plt.subplots(2, sharex=True)
-        axarr[0].plot(lst)
-        axarr[1].plot(bound_lst)
+        # f, axarr = plt.subplots(2, sharex=True)
+        # axarr[0].plot(lst)
+        # axarr[1].plot(bound_lst)
 
-        f.savefig(OUTPATH + chrm + '-RmLbound-py.png')
-        sio.savemat(OUTPATH + 'TAD-RmL-bounds_' + chrm + '.mat', {chrm + 'shifts': shift_lst, chrm + 'bounds': bound_lst})
+        # f.savefig(OUTPATH + chrm + '-LdRbound-py.png')
+        sio.savemat(OUTPATH + 'TAD-LdR-bounds_' + chrm + '.mat', {chrm + 'HESbounds': bound_lst})
 
 # plot window frames
 def plot_windows():  
@@ -394,17 +485,20 @@ def plot_windows():
 
     plt.show()
 
-chr_num = 1
+# chr_num = 1
 
-# metric_lst = zip(L_lst, R_lst, hL_lst, hR_lst)
+# # metric_lst = zip(L_lst, R_lst, hL_lst, hR_lst)
 
-# plot 
+# # plot 
 
-# L_lst, R_lst, hL_lst, hR_lst, qL_lst, qR_lst, LmR_lst, LdR_lst = calc_metrics(chr_num)
+# metrics = calc_metrics(chr_num)
+# LmR_lst = metrics['LmR']
+# LdR_lst = metrics['LdR']
 # shift_lst, bound_lst = find_shifts(LmR_lst)
 
 # length = len(shift_lst)
 # LdR_shift = np.zeros(length)
+# qLdR_shift = np.zeros(length)
 # LmR_shift = np.zeros(length)
 # qL_shift = np.zeros(length)
 # qR_shift = np.zeros(length)
@@ -414,6 +508,7 @@ chr_num = 1
 
 # for i, shift in enumerate(shift_lst):
 #     LdR_shift[i] = LdR_lst[shift]
+#     qLdR_shift[i] = qLdR_lst[shift]
 #     L_shift[i] = L_lst[shift]
 #     R_shift[i] = R_lst[shift]
 #     qL_shift[i] = qL_lst[shift]
@@ -425,17 +520,19 @@ chr_num = 1
 # fig = plt.figure()
 # ax = fig.add_subplot(111)
 # colorlist = ['r', 'g', 'b', 'y']
-# ax.hist([LdR_lst, LdR_shift], 50, range=[0, 5])
+# # ax.hist([LdR_lst, qLdR_lst], 50, range=[0, 5])
 # # ax = fig.add_subplot(122)
-# # ax.scatter(qL_shift, qR_shift, c='r')
+# ax.scatter(LdR_lst, qLdR_lst, c='b')
+# ax.scatter(LdR_shift, qLdR_shift, c='r')
 # plt.title("Test Cluster")
 # ax.set_xlabel('LdR')
-# ax.set_ylabel('fold')
+# ax.set_ylabel('qLdR')
 # # ax.set_zlabel('qR')
 # plt.show()
 
-process_metrics()
+# process_metrics()
 
+process_shifts()
 
 
 
