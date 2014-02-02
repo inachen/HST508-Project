@@ -34,12 +34,12 @@ def find_windows(chr_mat, size=WIN_SIZE):
 
 # checks a row vector for 0 reads, default 75% to pass
 def check_reads(vec_lst, threshold=QUAL_THRESH):
-    lst = []
+    lst = np.zeros(len(vec_lst))
     
-    for vec in vec_lst:
+    for i, vec in enumerate(vec_lst):
         cutoff = threshold * len(vec)
         if sum(vec != 0) > threshold:
-            lst.append(vec)
+            lst[i] = 1
 
     # list of passed vectors
     return lst
@@ -134,10 +134,7 @@ def plot_lst(lst, xlabel, ylabel, num):
     plt.close(0)
 
 # calculates all metric values
-def calc_metrics(chr_num):
-    # load data
-    chr_mat = load_chr(chr=chr_num)
-    window_lst = find_windows(chr_mat)
+def calc_metrics(window_lst):
 
     # calculate L, R, L+R
     length = len(window_lst)
@@ -429,13 +426,19 @@ def find_interiors_LdR(lst, min=INT_MIN, max=INT_MAX):
 # saves and plots metrics
 def process_metrics():
 
-    for chr_num in range(1, 2):#NUM_CHRMS+1):
+    for chr_num in range(2, 3):#NUM_CHRMS+1):
 
-        L_lst, R_lst, hL_lst, hR_lst, qL_lst, qR_lst, LmR_lst, LdR_lst, qLdR_lst = calc_metrics(chr_num)
+        chrm = 'chr' + str(chr_num)
+
+        # load data     
+        chr_mat = load_chr(chr=chr_num)
+        window_lst = find_windows(chr_mat)
+
+        metrics = calc_metrics(window_lst)
 
         # save and plot L, R, L+R, L-R graphs
         sio.savemat(OUTPATH + 'chr' + str(chr_num) + '-LR.mat', 
-            {'L': L_lst, 'R': R_lst, 'hL': hL_lst, 'hR': hR_lst, 'qL': qL_lst, 'qR': qR_lst, 'LmR': LmR_lst, 'LdR': LdR_lst, 'qLdR': qLdR_lst})
+            {'qLdR': metrics['qLdR']})
         
         # plot_lst(L_lst, 'Position', 'L', chr_num)
         # plot_lst(R_lst, 'Position', 'R', chr_num)
@@ -444,17 +447,30 @@ def process_metrics():
 
 # saves and plots shifts for each chromosome
 def process_shifts():
-    writer = csv.writer(open(OUTPATH + 'LRbounds-output.csv', 'wb'))
+    outfile = OUTPATH + 'LRbounds-output.csv'
+    writer = csv.writer(open(outfile, 'wb'))
 
-    for chr_num in range(2, NUM_CHRMS+1):
+    for chr_num in range(1, NUM_CHRMS+1):
 
         chrm = 'chr' + str(chr_num)
 
-        metrics = calc_metrics(chr_num)
+        # load data     
+        chr_mat = load_chr(chr=chr_num)
+        window_lst = find_windows(chr_mat)
+
+        metrics = calc_metrics(window_lst)
 
         lst = metrics['qLdR']
         shift_lst, bound_lst = find_shifts_LdR(lst)
         # interior_lst = find_shifts_LdR(lst)
+
+        # filter poor quality windows
+
+        read_checks = check_reads(window_lst)  
+
+        for i, b in enumerate(bound_lst):
+            if read_checks[i] == 0:
+                bound_lst[i] = 0
 
         writer.writerow([chrm])
         # writer.writerow(['shifts'])
@@ -467,7 +483,7 @@ def process_shifts():
         # axarr[1].plot(bound_lst)
 
         # f.savefig(OUTPATH + chrm + '-LdRbound-py.png')
-        sio.savemat(OUTPATH + 'TAD-LdR-bounds_' + chrm + '.mat', {chrm + 'HESbounds': bound_lst})
+        # sio.savemat(OUTPATH + 'TAD-LdR-bounds_' + chrm + '.mat', {chrm + 'HESbounds': bound_lst})
 
 # plot window frames
 def plot_windows():  
@@ -530,9 +546,9 @@ def plot_windows():
 # # ax.set_zlabel('qR')
 # plt.show()
 
-# process_metrics()
+process_metrics()
 
-process_shifts()
+# process_shifts()
 
 
 
